@@ -8,6 +8,8 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
@@ -84,6 +86,7 @@ import com.zaneschepke.wireguardautotunnel.R
 import com.zaneschepke.wireguardautotunnel.WireGuardAutoTunnel
 import com.zaneschepke.wireguardautotunnel.repository.model.TunnelConfig
 import com.zaneschepke.wireguardautotunnel.service.tunnel.HandshakeStatus
+import com.zaneschepke.wireguardautotunnel.ui.ActivityViewModel
 import com.zaneschepke.wireguardautotunnel.ui.CaptureActivityPortrait
 import com.zaneschepke.wireguardautotunnel.ui.Routes
 import com.zaneschepke.wireguardautotunnel.ui.common.RowListItem
@@ -212,7 +215,7 @@ fun MainScreen(
             }
         )
 
-    if (showPrimaryChangeAlertDialog) {
+    AnimatedVisibility(showPrimaryChangeAlertDialog) {
         AlertDialog(
             onDismissRequest = {
                 showPrimaryChangeAlertDialog = false
@@ -288,7 +291,7 @@ fun MainScreen(
             }
         }
     ) {
-        if (tunnels.isEmpty()) {
+        AnimatedVisibility(tunnels.isEmpty(), exit = fadeOut(), enter = fadeIn()) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,

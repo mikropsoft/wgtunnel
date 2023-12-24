@@ -38,11 +38,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -71,6 +73,7 @@ import com.wireguard.android.backend.WgQuickBackend
 import com.zaneschepke.wireguardautotunnel.R
 import com.zaneschepke.wireguardautotunnel.WireGuardAutoTunnel
 import com.zaneschepke.wireguardautotunnel.repository.datastore.DataStoreManager
+import com.zaneschepke.wireguardautotunnel.ui.ActivityViewModel
 import com.zaneschepke.wireguardautotunnel.ui.common.ClickableIconButton
 import com.zaneschepke.wireguardautotunnel.ui.common.config.ConfigurationToggle
 import com.zaneschepke.wireguardautotunnel.ui.common.prompt.AuthorizationPrompt
@@ -95,31 +98,29 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope { Dispatchers.IO }
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val scrollState = rememberScrollState()
     val keyboardController = LocalSoftwareKeyboardController.current
     val interactionSource = remember { MutableInteractionSource() }
 
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val trustedSSIDs by viewModel.trustedSSIDs.collectAsStateWithLifecycle()
-    val tunnels by viewModel.tunnels.collectAsStateWithLifecycle(mutableListOf())
+    val tunnels by viewModel.tunnels.collectAsStateWithLifecycle()
+    val vpnState = viewModel.vpnState.collectAsStateWithLifecycle()
+
     val fineLocationState = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
     var currentText by remember { mutableStateOf("") }
-    val scrollState = rememberScrollState()
     var isBackgroundLocationGranted by remember { mutableStateOf(true) }
-    var showAuthPrompt by remember { mutableStateOf(false) }
     var didExportFiles by remember { mutableStateOf(false) }
-    val isLocationDisclosureShown by viewModel.disclosureShown.collectAsStateWithLifecycle(
-        null
-    )
-    val vpnState = viewModel.vpnState.collectAsStateWithLifecycle(initialValue = Tunnel.State.DOWN)
+    var showAuthPrompt by remember { mutableStateOf(false) }
+    var isLocationDisclosureShown by rememberSaveable {
+        mutableStateOf(false)
+    }
 
     val screenPadding = 5.dp
     val fillMaxWidth = .85f
 
-    fun setLocationDisclosureShown() = scope.launch {
-        viewModel.dataStoreManager.saveToDataStore(
-            DataStoreManager.LOCATION_DISCLOSURE_SHOWN,
-            true
-        )
+
+    LaunchedEffect(Unit) {
+        isLocationDisclosureShown = viewModel.isLocationDisclosureShown()
     }
 
     fun exportAllConfigs() {
@@ -175,25 +176,25 @@ fun SettingsScreen(
         isBackgroundLocationGranted = if (!backgroundLocationState.status.isGranted) {
             false
         } else {
-            SideEffect {
-                setLocationDisclosureShown()
+            if(!isLocationDisclosureShown) {
+                viewModel.setLocationDisclosureShown()
             }
             true
         }
     }
 
     if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-        if (!fineLocationState.status.isGranted) {
-            isBackgroundLocationGranted = false
+        isBackgroundLocationGranted = if (!fineLocationState.status.isGranted) {
+            false
         } else {
             SideEffect {
-                setLocationDisclosureShown()
+                viewModel.setLocationDisclosureShown()
             }
-            isBackgroundLocationGranted = true
+            true
         }
     }
 
-        if (isLocationDisclosureShown != true) {
+        AnimatedVisibility(!isLocationDisclosureShown) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top,
@@ -238,22 +239,21 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
                     TextButton(onClick = {
-                        setLocationDisclosureShown()
+                        viewModel.setLocationDisclosureShown()
                     }) {
                         Text(stringResource(id = R.string.no_thanks))
                     }
                     TextButton(modifier = Modifier.focusRequester(focusRequester), onClick = {
                         openSettings()
-                        setLocationDisclosureShown()
+                        viewModel.setLocationDisclosureShown()
                     }) {
                         Text(stringResource(id = R.string.turn_on))
                     }
                 }
             }
-            return
         }
 
-        if (showAuthPrompt) {
+        AnimatedVisibility(showAuthPrompt) {
             AuthorizationPrompt(
                 onSuccess = {
                     showAuthPrompt = false
@@ -348,7 +348,7 @@ fun SettingsScreen(
                                     .fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                trustedSSIDs.forEach { ssid ->
+                                settings.trustedNetworkSSIDs.forEach { ssid ->
                                     ClickableIconButton(
                                         onIconClick = {
                                             scope.launch {
@@ -360,7 +360,7 @@ fun SettingsScreen(
                                         enabled = !(settings.isAutoTunnelEnabled || settings.isAlwaysOnVpnEnabled)
                                     )
                                 }
-                                if (trustedSSIDs.isEmpty()) {
+                                if (settings.trustedNetworkSSIDs.isEmpty()) {
                                     Text(
                                         stringResource(R.string.none),
                                         fontStyle = FontStyle.Italic,
@@ -535,7 +535,8 @@ fun SettingsScreen(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surface,
                     modifier = Modifier
-                        .fillMaxWidth(fillMaxWidth).padding(vertical = 10.dp)
+                        .fillMaxWidth(fillMaxWidth)
+                        .padding(vertical = 10.dp)
                         .padding(bottom = 140.dp)
                 ) {
                     Column(

@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -64,8 +65,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // TODO move shared logic to shared viewmodel
-            // val sharedViewModel = hiltViewModel<ActivityViewModel>()
+//            val activityViewModel = hiltViewModel<ActivityViewModel>()
             val navController = rememberNavController()
             val focusRequester = remember { FocusRequester() }
 
