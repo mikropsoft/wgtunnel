@@ -8,8 +8,8 @@ import androidx.lifecycle.lifecycleScope
 import com.zaneschepke.wireguardautotunnel.Constants
 import com.zaneschepke.wireguardautotunnel.R
 import com.zaneschepke.wireguardautotunnel.receiver.NotificationActionReceiver
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
-import com.zaneschepke.wireguardautotunnel.repository.model.TunnelConfig
+import com.zaneschepke.wireguardautotunnel.data.SettingsDao
+import com.zaneschepke.wireguardautotunnel.data.model.TunnelConfig
 import com.zaneschepke.wireguardautotunnel.service.notification.NotificationService
 import com.zaneschepke.wireguardautotunnel.service.tunnel.HandshakeStatus
 import com.zaneschepke.wireguardautotunnel.service.tunnel.VpnService
@@ -28,7 +28,7 @@ class WireGuardTunnelService : ForegroundService() {
     lateinit var vpnService: VpnService
 
     @Inject
-    lateinit var settingsRepo: SettingsDoa
+    lateinit var settingsRepo: SettingsDao
 
     @Inject
     lateinit var notificationService: NotificationService

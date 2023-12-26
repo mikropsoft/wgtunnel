@@ -12,8 +12,8 @@ import androidx.lifecycle.lifecycleScope
 import com.wireguard.android.backend.Tunnel
 import com.zaneschepke.wireguardautotunnel.Constants
 import com.zaneschepke.wireguardautotunnel.R
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
-import com.zaneschepke.wireguardautotunnel.repository.model.Settings
+import com.zaneschepke.wireguardautotunnel.data.SettingsDao
+import com.zaneschepke.wireguardautotunnel.data.model.Settings
 import com.zaneschepke.wireguardautotunnel.service.network.EthernetService
 import com.zaneschepke.wireguardautotunnel.service.network.MobileDataService
 import com.zaneschepke.wireguardautotunnel.service.network.NetworkService
@@ -44,7 +44,7 @@ class WireGuardConnectivityWatcherService : ForegroundService() {
     lateinit var ethernetService: NetworkService<EthernetService>
 
     @Inject
-    lateinit var settingsRepo: SettingsDoa
+    lateinit var settingsRepo: SettingsDao
 
     @Inject
     lateinit var notificationService: NotificationService

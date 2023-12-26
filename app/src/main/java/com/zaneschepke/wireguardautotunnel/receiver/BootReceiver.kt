@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.zaneschepke.wireguardautotunnel.goAsync
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
+import com.zaneschepke.wireguardautotunnel.data.SettingsDao
 import com.zaneschepke.wireguardautotunnel.service.foreground.ServiceManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -13,7 +13,7 @@ import kotlinx.coroutines.cancel
 @AndroidEntryPoint
 class BootReceiver : BroadcastReceiver() {
     @Inject
-    lateinit var settingsRepo: SettingsDoa
+    lateinit var settingsRepo: SettingsDao
 
     override fun onReceive(
         context: Context,

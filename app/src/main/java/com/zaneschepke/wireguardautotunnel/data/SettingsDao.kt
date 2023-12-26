@@ -1,15 +1,15 @@
-package com.zaneschepke.wireguardautotunnel.repository
+package com.zaneschepke.wireguardautotunnel.data
 
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import com.zaneschepke.wireguardautotunnel.repository.model.Settings
+import com.zaneschepke.wireguardautotunnel.data.model.Settings
 import kotlinx.coroutines.flow.Flow
 
 @Dao
-interface SettingsDoa {
+interface SettingsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(t: Settings)
 

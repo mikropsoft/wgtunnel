@@ -10,10 +10,11 @@ import androidx.lifecycle.viewModelScope
 import com.wireguard.config.Config
 import com.zaneschepke.wireguardautotunnel.Constants
 import com.zaneschepke.wireguardautotunnel.R
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
-import com.zaneschepke.wireguardautotunnel.repository.TunnelConfigDao
-import com.zaneschepke.wireguardautotunnel.repository.model.Settings
-import com.zaneschepke.wireguardautotunnel.repository.model.TunnelConfig
+import com.zaneschepke.wireguardautotunnel.data.SettingsDao
+import com.zaneschepke.wireguardautotunnel.data.TunnelConfigDao
+import com.zaneschepke.wireguardautotunnel.data.model.Settings
+import com.zaneschepke.wireguardautotunnel.data.model.TunnelConfig
+import com.zaneschepke.wireguardautotunnel.data.repository.SettingsRepository
 import com.zaneschepke.wireguardautotunnel.service.foreground.ServiceManager
 import com.zaneschepke.wireguardautotunnel.service.foreground.ServiceState
 import com.zaneschepke.wireguardautotunnel.service.foreground.WireGuardConnectivityWatcherService
@@ -39,7 +40,7 @@ class MainViewModel
 constructor(
     private val application: Application,
     private val tunnelRepo: TunnelConfigDao,
-    private val settingsRepo: SettingsDoa,
+    private val settingsRepository: SettingsRepository,
     private val vpnService: VpnService
 ) : ViewModel() {
     val tunnels get() = tunnelRepo.getAllFlow()
@@ -53,10 +54,9 @@ constructor(
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            settingsRepo.getAllFlow().filter { it.isNotEmpty() }.collect {
-                val settings = it.first()
-                validateWatcherServiceState(settings)
-                _settings.emit(settings)
+            settingsRepository.getSettings().collect {
+                validateWatcherServiceState(it)
+                _settings.emit(it)
             }
         }
     }
@@ -79,13 +79,13 @@ constructor(
         viewModelScope.launch {
             if (tunnelRepo.count() == 1L) {
                 ServiceManager.stopWatcherService(application.applicationContext)
-                val settings = settingsRepo.getAll()
+                val settings = settingsRepository.getAll()
                 if (settings.isNotEmpty()) {
                     val setting = settings[0]
                     setting.defaultTunnel = null
                     setting.isAutoTunnelEnabled = false
                     setting.isAlwaysOnVpnEnabled = false
-                    settingsRepo.save(setting)
+                    saveSettings(setting)
                 }
             }
             tunnelRepo.delete(tunnel)
@@ -237,6 +237,11 @@ constructor(
         }
     }
 
+    private suspend fun saveSettings(settings: Settings) {
+        //TODO handle error if fails
+        settingsRepository.save(settings)
+    }
+
     private fun getFileName(
         context: Context,
         uri: Uri
@@ -268,7 +273,7 @@ constructor(
                     defaultTunnel = selectedTunnel.toString()
                 )
             )
-            settingsRepo.save(_settings.value)
+            settingsRepository.save(_settings.value)
         }
     }
 }

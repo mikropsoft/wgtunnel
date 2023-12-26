@@ -1,4 +1,4 @@
-package com.zaneschepke.wireguardautotunnel.repository.model
+package com.zaneschepke.wireguardautotunnel.data.model
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity

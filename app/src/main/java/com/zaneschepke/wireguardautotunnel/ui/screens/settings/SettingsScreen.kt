@@ -4,7 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.provider.Settings
+import android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -38,13 +38,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -72,17 +70,15 @@ import com.wireguard.android.backend.Tunnel
 import com.wireguard.android.backend.WgQuickBackend
 import com.zaneschepke.wireguardautotunnel.R
 import com.zaneschepke.wireguardautotunnel.WireGuardAutoTunnel
-import com.zaneschepke.wireguardautotunnel.repository.datastore.DataStoreManager
-import com.zaneschepke.wireguardautotunnel.ui.ActivityViewModel
 import com.zaneschepke.wireguardautotunnel.ui.common.ClickableIconButton
 import com.zaneschepke.wireguardautotunnel.ui.common.config.ConfigurationToggle
 import com.zaneschepke.wireguardautotunnel.ui.common.prompt.AuthorizationPrompt
 import com.zaneschepke.wireguardautotunnel.ui.common.text.SectionTitle
 import com.zaneschepke.wireguardautotunnel.util.FileUtils
-import com.zaneschepke.wireguardautotunnel.util.WgTunnelException
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+
 @OptIn(
     ExperimentalPermissionsApi::class,
     ExperimentalLayoutApi::class,
@@ -102,33 +98,26 @@ fun SettingsScreen(
     val keyboardController = LocalSoftwareKeyboardController.current
     val interactionSource = remember { MutableInteractionSource() }
 
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val tunnels by viewModel.tunnels.collectAsStateWithLifecycle()
-    val vpnState = viewModel.vpnState.collectAsStateWithLifecycle()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     val fineLocationState = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
     var currentText by remember { mutableStateOf("") }
     var isBackgroundLocationGranted by remember { mutableStateOf(true) }
     var didExportFiles by remember { mutableStateOf(false) }
     var showAuthPrompt by remember { mutableStateOf(false) }
-    var isLocationDisclosureShown by rememberSaveable {
-        mutableStateOf(false)
-    }
 
     val screenPadding = 5.dp
     val fillMaxWidth = .85f
 
 
-    LaunchedEffect(Unit) {
-        isLocationDisclosureShown = viewModel.isLocationDisclosureShown()
-    }
+    //TODO add error collecting and displaying for WGTunnelErrors
 
     fun exportAllConfigs() {
         try {
-            val files = tunnels.map { File(context.cacheDir, "${it.name}.conf") }
+            val files = uiState.tunnels.map { File(context.cacheDir, "${it.name}.conf") }
             files.forEachIndexed { index, file ->
                 file.outputStream().use {
-                    it.write(tunnels[index].wgQuick.toByteArray())
+                    it.write(uiState.tunnels[index].wgQuick.toByteArray())
                 }
             }
             FileUtils.saveFilesToZip(context, files)
@@ -163,10 +152,21 @@ fun SettingsScreen(
     fun openSettings() {
         scope.launch {
             val intentSettings =
-                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                Intent(ACTION_APPLICATION_DETAILS_SETTINGS)
             intentSettings.data =
                 Uri.fromParts("package", context.packageName, null)
             context.startActivity(intentSettings)
+        }
+    }
+
+    fun checkFineLocationGranted() {
+        isBackgroundLocationGranted = if (!fineLocationState.status.isGranted) {
+            false
+        } else {
+            scope.launch {
+                viewModel.setLocationDisclosureShown()
+            }
+            true
         }
     }
 
@@ -176,7 +176,7 @@ fun SettingsScreen(
         isBackgroundLocationGranted = if (!backgroundLocationState.status.isGranted) {
             false
         } else {
-            if(!isLocationDisclosureShown) {
+            SideEffect {
                 viewModel.setLocationDisclosureShown()
             }
             true
@@ -194,7 +194,7 @@ fun SettingsScreen(
         }
     }
 
-        AnimatedVisibility(!isLocationDisclosureShown) {
+        AnimatedVisibility(!uiState.isLocationDisclosureShown) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top,
@@ -270,7 +270,7 @@ fun SettingsScreen(
             )
         }
 
-        if (tunnels.isEmpty()) {
+        if (uiState.tunnels.isEmpty()) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -330,17 +330,15 @@ fun SettingsScreen(
                     )
                     ConfigurationToggle(
                         stringResource(id = R.string.tunnel_on_wifi),
-                        enabled = !(settings.isAutoTunnelEnabled || settings.isAlwaysOnVpnEnabled),
-                        checked = settings.isTunnelOnWifiEnabled,
+                        enabled = !(uiState.settings.isAutoTunnelEnabled || uiState.settings.isAlwaysOnVpnEnabled),
+                        checked = uiState.settings.isTunnelOnWifiEnabled,
                         padding = screenPadding,
                         onCheckChanged = {
-                            scope.launch {
-                                viewModel.onToggleTunnelOnWifi()
-                            }
+                            viewModel.onToggleTunnelOnWifi()
                         },
                         modifier = Modifier.focusRequester(focusRequester)
                     )
-                    AnimatedVisibility(visible = settings.isTunnelOnWifiEnabled) {
+                    AnimatedVisibility(visible = uiState.settings.isTunnelOnWifiEnabled) {
                         Column {
                             FlowRow(
                                 modifier = Modifier
@@ -348,19 +346,17 @@ fun SettingsScreen(
                                     .fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                settings.trustedNetworkSSIDs.forEach { ssid ->
+                                uiState.settings.trustedNetworkSSIDs.forEach { ssid ->
                                     ClickableIconButton(
                                         onIconClick = {
-                                            scope.launch {
-                                                viewModel.onDeleteTrustedSSID(ssid)
-                                            }
+                                            viewModel.onDeleteTrustedSSID(ssid)
                                         },
                                         text = ssid,
                                         icon = Icons.Filled.Close,
-                                        enabled = !(settings.isAutoTunnelEnabled || settings.isAlwaysOnVpnEnabled)
+                                        enabled = !(uiState.settings.isAutoTunnelEnabled || uiState.settings.isAlwaysOnVpnEnabled)
                                     )
                                 }
-                                if (settings.trustedNetworkSSIDs.isEmpty()) {
+                                if (uiState.settings.trustedNetworkSSIDs.isEmpty()) {
                                     Text(
                                         stringResource(R.string.none),
                                         fontStyle = FontStyle.Italic,
@@ -369,7 +365,7 @@ fun SettingsScreen(
                                 }
                             }
                             OutlinedTextField(
-                                enabled = !(settings.isAutoTunnelEnabled || settings.isAlwaysOnVpnEnabled),
+                                enabled = !(uiState.settings.isAutoTunnelEnabled || uiState.settings.isAlwaysOnVpnEnabled),
                                 value = currentText,
                                 onValueChange = { currentText = it },
                                 label = { Text(stringResource(R.string.add_trusted_ssid)) },
@@ -418,35 +414,29 @@ fun SettingsScreen(
                     }
                     ConfigurationToggle(
                         stringResource(R.string.tunnel_mobile_data),
-                        enabled = !(settings.isAutoTunnelEnabled || settings.isAlwaysOnVpnEnabled),
-                        checked = settings.isTunnelOnMobileDataEnabled,
+                        enabled = !(uiState.settings.isAutoTunnelEnabled || uiState.settings.isAlwaysOnVpnEnabled),
+                        checked = uiState.settings.isTunnelOnMobileDataEnabled,
                         padding = screenPadding,
                         onCheckChanged = {
-                            scope.launch {
-                                viewModel.onToggleTunnelOnMobileData()
-                            }
+                            viewModel.onToggleTunnelOnMobileData()
                         }
                     )
                     ConfigurationToggle(
                         stringResource(id = R.string.tunnel_on_ethernet),
-                        enabled = !(settings.isAutoTunnelEnabled || settings.isAlwaysOnVpnEnabled),
-                        checked = settings.isTunnelOnEthernetEnabled,
+                        enabled = !(uiState.settings.isAutoTunnelEnabled || uiState.settings.isAlwaysOnVpnEnabled),
+                        checked = uiState.settings.isTunnelOnEthernetEnabled,
                         padding = screenPadding,
                         onCheckChanged = {
-                            scope.launch {
-                                viewModel.onToggleTunnelOnEthernet()
-                            }
+                            viewModel.onToggleTunnelOnEthernet()
                         }
                     )
                     ConfigurationToggle(
                         stringResource(R.string.battery_saver),
-                        enabled = !(settings.isAutoTunnelEnabled || settings.isAlwaysOnVpnEnabled),
-                        checked = settings.isBatterySaverEnabled,
+                        enabled = !(uiState.settings.isAutoTunnelEnabled || uiState.settings.isAlwaysOnVpnEnabled),
+                        checked = uiState.settings.isBatterySaverEnabled,
                         padding = screenPadding,
                         onCheckChanged = {
-                            scope.launch {
-                                viewModel.onToggleBatterySaver()
-                            }
+                            viewModel.onToggleBatterySaver()
                         }
                     )
                     Row(
@@ -458,9 +448,9 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         TextButton(
-                            enabled = !settings.isAlwaysOnVpnEnabled,
+                            enabled = !uiState.settings.isAlwaysOnVpnEnabled,
                             onClick = {
-                                if (!isAllAutoTunnelPermissionsEnabled() && settings.isTunnelOnWifiEnabled) {
+                                if (!isAllAutoTunnelPermissionsEnabled() && uiState.settings.isTunnelOnWifiEnabled) {
                                     val message =
                                         if (!isBackgroundLocationGranted) {
                                             context.getString(R.string.background_location_required)
@@ -471,14 +461,12 @@ fun SettingsScreen(
                                         }
                                     showSnackbarMessage(message)
                                 } else {
-                                    scope.launch {
-                                        viewModel.toggleAutoTunnel()
-                                    }
+                                    viewModel.toggleAutoTunnel()
                                 }
                             }
                         ) {
                             val autoTunnelButtonText =
-                                if (settings.isAutoTunnelEnabled) {
+                                if (uiState.settings.isAutoTunnelEnabled) {
                                     stringResource(R.string.disable_auto_tunnel)
                                 } else {
                                     stringResource(id = R.string.enable_auto_tunnel)
@@ -510,19 +498,13 @@ fun SettingsScreen(
                         ConfigurationToggle(
                             stringResource(R.string.use_kernel),
                             enabled = !(
-                                    settings.isAutoTunnelEnabled || settings.isAlwaysOnVpnEnabled ||
-                                            (vpnState.value == Tunnel.State.UP)
+                                    uiState.settings.isAutoTunnelEnabled || uiState.settings.isAlwaysOnVpnEnabled ||
+                                            (uiState.tunnelState == Tunnel.State.UP)
                                     ),
-                            checked = settings.isKernelEnabled,
+                            checked = uiState.settings.isKernelEnabled,
                             padding = screenPadding,
                             onCheckChanged = {
-                                scope.launch {
-                                    try {
-                                        viewModel.onToggleKernelMode()
-                                    } catch (e: WgTunnelException) {
-                                        showSnackbarMessage(e.message)
-                                    }
-                                }
+                                viewModel.onToggleKernelMode()
                             }
                         )
                     }
@@ -550,8 +532,8 @@ fun SettingsScreen(
                         )
                         ConfigurationToggle(
                             stringResource(R.string.always_on_vpn_support),
-                            enabled = !settings.isAutoTunnelEnabled,
-                            checked = settings.isAlwaysOnVpnEnabled,
+                            enabled = !uiState.settings.isAutoTunnelEnabled,
+                            checked = uiState.settings.isAlwaysOnVpnEnabled,
                             padding = screenPadding,
                             onCheckChanged = {
                                 scope.launch {
@@ -562,7 +544,7 @@ fun SettingsScreen(
                         ConfigurationToggle(
                             stringResource(R.string.enabled_app_shortcuts),
                             enabled = true,
-                            checked = settings.isShortcutsEnabled,
+                            checked = uiState.settings.isShortcutsEnabled,
                             padding = screenPadding,
                             onCheckChanged = {
                                 scope.launch {

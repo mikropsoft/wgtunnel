@@ -15,9 +15,9 @@ import com.wireguard.config.Peer
 import com.wireguard.crypto.Key
 import com.wireguard.crypto.KeyPair
 import com.zaneschepke.wireguardautotunnel.Constants
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
-import com.zaneschepke.wireguardautotunnel.repository.TunnelConfigDao
-import com.zaneschepke.wireguardautotunnel.repository.model.TunnelConfig
+import com.zaneschepke.wireguardautotunnel.data.SettingsDao
+import com.zaneschepke.wireguardautotunnel.data.TunnelConfigDao
+import com.zaneschepke.wireguardautotunnel.data.model.TunnelConfig
 import com.zaneschepke.wireguardautotunnel.ui.models.InterfaceProxy
 import com.zaneschepke.wireguardautotunnel.ui.models.PeerProxy
 import com.zaneschepke.wireguardautotunnel.util.NumberUtils
@@ -35,7 +35,7 @@ class ConfigViewModel
 constructor(
     private val application: Application,
     private val tunnelRepo: TunnelConfigDao,
-    private val settingsRepo: SettingsDoa
+    private val settingsRepo: SettingsDao
 ) : ViewModel() {
     private val _tunnel = MutableStateFlow<TunnelConfig?>(null)
     private val _tunnelName = MutableStateFlow("")

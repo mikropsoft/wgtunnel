@@ -29,3 +29,4 @@ fun BigDecimal.toThreeDecimalPlaceString(): String {
     val df = DecimalFormat("#.###")
     return df.format(this)
 }
+

@@ -3,10 +3,10 @@ package com.zaneschepke.wireguardautotunnel.service.shortcut
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
-import com.zaneschepke.wireguardautotunnel.repository.TunnelConfigDao
-import com.zaneschepke.wireguardautotunnel.repository.model.Settings
-import com.zaneschepke.wireguardautotunnel.repository.model.TunnelConfig
+import com.zaneschepke.wireguardautotunnel.data.SettingsDao
+import com.zaneschepke.wireguardautotunnel.data.TunnelConfigDao
+import com.zaneschepke.wireguardautotunnel.data.model.Settings
+import com.zaneschepke.wireguardautotunnel.data.model.TunnelConfig
 import com.zaneschepke.wireguardautotunnel.service.foreground.Action
 import com.zaneschepke.wireguardautotunnel.service.foreground.ServiceManager
 import com.zaneschepke.wireguardautotunnel.service.foreground.WireGuardTunnelService
@@ -20,7 +20,7 @@ import timber.log.Timber
 @AndroidEntryPoint
 class ShortcutsActivity : ComponentActivity() {
     @Inject
-    lateinit var settingsRepo: SettingsDoa
+    lateinit var settingsRepo: SettingsDao
 
     @Inject
     lateinit var tunnelConfigRepo: TunnelConfigDao

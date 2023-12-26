@@ -6,18 +6,18 @@ import android.location.LocationManager
 import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.wireguard.android.backend.Tunnel
 import com.wireguard.android.util.RootShell
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
-import com.zaneschepke.wireguardautotunnel.repository.TunnelConfigDao
-import com.zaneschepke.wireguardautotunnel.repository.datastore.DataStoreManager
-import com.zaneschepke.wireguardautotunnel.repository.model.Settings
+import com.zaneschepke.wireguardautotunnel.data.TunnelConfigDao
+import com.zaneschepke.wireguardautotunnel.data.datastore.DataStoreManager
+import com.zaneschepke.wireguardautotunnel.data.model.Settings
+import com.zaneschepke.wireguardautotunnel.data.repository.SettingsRepository
 import com.zaneschepke.wireguardautotunnel.service.foreground.ServiceManager
 import com.zaneschepke.wireguardautotunnel.service.tunnel.VpnService
 import com.zaneschepke.wireguardautotunnel.util.WgTunnelException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -28,24 +28,27 @@ class SettingsViewModel
 constructor(
     private val application: Application,
     private val tunnelRepo: TunnelConfigDao,
-    private val settingsRepo: SettingsDoa,
+    private val settingsRepository: SettingsRepository,
     private val dataStoreManager: DataStoreManager,
     private val rootShell: RootShell,
     private val vpnService: VpnService
 ) : ViewModel() {
 
-    val settings = settingsRepo.getSettingsFlow().stateIn(viewModelScope,
-        SharingStarted.WhileSubscribed(5_000L), Settings())
-    val tunnels = tunnelRepo.getAllFlow().stateIn(viewModelScope,
-        SharingStarted.WhileSubscribed(5_000L), emptyList())
-    val vpnState get() = vpnService.state.stateIn(viewModelScope,
-        SharingStarted.WhileSubscribed(5_000L), Tunnel.State.DOWN)
+    val uiState = combine(
+        settingsRepository.getSettings(),
+        tunnelRepo.getAllFlow(),
+        vpnService.state,
+        dataStoreManager.locationDisclosureFlow,
+    ){ settings, tunnels, tunnelState, locationDisclosure ->
+        SettingsUiState(settings, tunnels, tunnelState, locationDisclosure ?: false, false)
+    }.stateIn(viewModelScope,
+        SharingStarted.WhileSubscribed(5_000L), SettingsUiState())
 
-    suspend fun onSaveTrustedSSID(ssid: String) {
+    fun onSaveTrustedSSID(ssid: String) {
         val trimmed = ssid.trim()
-        if (!settings.value.trustedNetworkSSIDs.contains(trimmed)) {
-            settings.value.trustedNetworkSSIDs.add(trimmed)
-            settingsRepo.save(settings.value)
+        if (!uiState.value.settings.trustedNetworkSSIDs.contains(trimmed)) {
+            uiState.value.settings.trustedNetworkSSIDs.add(trimmed)
+            saveSettings(uiState.value.settings)
         } else {
             throw WgTunnelException("SSID already exists.")
         }
@@ -55,39 +58,37 @@ constructor(
         return dataStoreManager.getFromStore(DataStoreManager.LOCATION_DISCLOSURE_SHOWN) ?: false
     }
 
-    fun setLocationDisclosureShown() {
-        viewModelScope.launch {
+    fun setLocationDisclosureShown() = viewModelScope.launch {
             dataStoreManager.saveToDataStore(DataStoreManager.LOCATION_DISCLOSURE_SHOWN, true)
-        }
     }
 
-    suspend fun onToggleTunnelOnMobileData() {
-        settingsRepo.save(
-            settings.value.copy(
-                isTunnelOnMobileDataEnabled = !settings.value.isTunnelOnMobileDataEnabled
+    fun onToggleTunnelOnMobileData() {
+        saveSettings(
+            uiState.value.settings.copy(
+                isTunnelOnMobileDataEnabled = !uiState.value.settings.isTunnelOnMobileDataEnabled
             )
         )
     }
 
-    suspend fun onDeleteTrustedSSID(ssid: String) {
-        settings.value.trustedNetworkSSIDs.remove(ssid)
-        settingsRepo.save(settings.value)
+    fun onDeleteTrustedSSID(ssid: String) {
+        uiState.value.settings.trustedNetworkSSIDs.remove(ssid)
+        saveSettings(uiState.value.settings)
     }
 
     private suspend fun getDefaultTunnelOrFirst() : String {
-        return settings.value.defaultTunnel ?: tunnelRepo.getAll().first().wgQuick
+        return uiState.value.settings.defaultTunnel ?: tunnelRepo.getAll().first().wgQuick
     }
 
-    suspend fun toggleAutoTunnel() {
+    fun toggleAutoTunnel() = viewModelScope.launch {
         val defaultTunnel = getDefaultTunnelOrFirst()
-        if (settings.value.isAutoTunnelEnabled) {
+        if (uiState.value.settings.isAutoTunnelEnabled) {
             ServiceManager.stopWatcherService(application)
         } else {
             ServiceManager.startWatcherService(application, defaultTunnel)
         }
         saveSettings(
-            settings.value.copy(
-                isAutoTunnelEnabled = settings.value.isAutoTunnelEnabled,
+            uiState.value.settings.copy(
+                isAutoTunnelEnabled = uiState.value.settings.isAutoTunnelEnabled,
                 defaultTunnel = defaultTunnel
             )
         )
@@ -95,20 +96,20 @@ constructor(
 
     suspend fun onToggleAlwaysOnVPN() {
         val updatedSettings =
-            settings.value.copy(
-                isAlwaysOnVpnEnabled = !settings.value.isAlwaysOnVpnEnabled,
+            uiState.value.settings.copy(
+                isAlwaysOnVpnEnabled = !uiState.value.settings.isAlwaysOnVpnEnabled,
                 defaultTunnel = getDefaultTunnelOrFirst()
             )
         saveSettings(updatedSettings)
     }
 
-    private suspend fun saveSettings(settings: Settings) {
-        settingsRepo.save(settings)
+    private fun saveSettings(settings: Settings) = viewModelScope.launch {
+        settingsRepository.save(settings)
     }
 
-    suspend fun onToggleTunnelOnEthernet() {
-        saveSettings(settings.value.copy(
-            isTunnelOnEthernetEnabled = !settings.value.isTunnelOnEthernetEnabled
+    fun onToggleTunnelOnEthernet() {
+        saveSettings(uiState.value.settings.copy(
+            isTunnelOnEthernetEnabled = !uiState.value.settings.isTunnelOnEthernetEnabled
         ))
     }
 
@@ -122,40 +123,40 @@ constructor(
         return (!isLocationServicesEnabled() && Build.VERSION.SDK_INT > Build.VERSION_CODES.P)
     }
 
-    suspend fun onToggleShortcutsEnabled() {
+    fun onToggleShortcutsEnabled() {
         saveSettings(
-            settings.value.copy(
-                isShortcutsEnabled = !settings.value.isShortcutsEnabled
+            uiState.value.settings.copy(
+                isShortcutsEnabled = !uiState.value.settings.isShortcutsEnabled
             )
         )
     }
 
-    suspend fun onToggleBatterySaver() {
+    fun onToggleBatterySaver() {
         saveSettings(
-            settings.value.copy(
-                isBatterySaverEnabled = !settings.value.isBatterySaverEnabled
+            uiState.value.settings.copy(
+                isBatterySaverEnabled = !uiState.value.settings.isBatterySaverEnabled
             )
         )
     }
 
-    private suspend fun saveKernelMode(on: Boolean) {
+    private fun saveKernelMode(on: Boolean) {
         saveSettings(
-            settings.value.copy(
+            uiState.value.settings.copy(
                 isKernelEnabled = on
             )
         )
     }
 
-    suspend fun onToggleTunnelOnWifi() {
+    fun onToggleTunnelOnWifi() {
         saveSettings(
-            settings.value.copy(
-                isTunnelOnWifiEnabled = !settings.value.isTunnelOnWifiEnabled
+            uiState.value.settings.copy(
+                isTunnelOnWifiEnabled = !uiState.value.settings.isTunnelOnWifiEnabled
             )
         )
     }
 
-    suspend fun onToggleKernelMode() {
-        if (!settings.value.isKernelEnabled) {
+    fun onToggleKernelMode() = viewModelScope.launch {
+        if (!uiState.value.settings.isKernelEnabled) {
             try {
                 rootShell.start()
                 Timber.d("Root shell accepted!")

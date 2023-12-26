@@ -5,9 +5,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
-import com.zaneschepke.wireguardautotunnel.repository.datastore.DataStoreManager
-import com.zaneschepke.wireguardautotunnel.repository.model.Settings
+import com.zaneschepke.wireguardautotunnel.data.SettingsDao
+import com.zaneschepke.wireguardautotunnel.data.datastore.DataStoreManager
+import com.zaneschepke.wireguardautotunnel.data.model.Settings
 import dagger.hilt.android.HiltAndroidApp
 import java.io.IOException
 import javax.inject.Inject
@@ -17,7 +17,7 @@ import timber.log.Timber
 @HiltAndroidApp
 class WireGuardAutoTunnel : Application() {
     @Inject
-    lateinit var settingsRepo: SettingsDoa
+    lateinit var settingsRepo: SettingsDao
 
     @Inject
     lateinit var dataStoreManager: DataStoreManager

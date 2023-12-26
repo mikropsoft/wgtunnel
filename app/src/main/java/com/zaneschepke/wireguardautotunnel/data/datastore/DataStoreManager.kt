@@ -1,4 +1,4 @@
-package com.zaneschepke.wireguardautotunnel.repository.datastore
+package com.zaneschepke.wireguardautotunnel.data.datastore
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey

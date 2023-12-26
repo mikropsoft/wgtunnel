@@ -9,8 +9,8 @@ import com.wireguard.crypto.Key
 import com.zaneschepke.wireguardautotunnel.Constants
 import com.zaneschepke.wireguardautotunnel.module.Kernel
 import com.zaneschepke.wireguardautotunnel.module.Userspace
-import com.zaneschepke.wireguardautotunnel.repository.SettingsDoa
-import com.zaneschepke.wireguardautotunnel.repository.model.TunnelConfig
+import com.zaneschepke.wireguardautotunnel.data.SettingsDao
+import com.zaneschepke.wireguardautotunnel.data.model.TunnelConfig
 import com.zaneschepke.wireguardautotunnel.util.NumberUtils
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -31,7 +31,7 @@ class WireGuardTunnel
 constructor(
     @Userspace private val userspaceBackend: Backend,
     @Kernel private val kernelBackend: Backend,
-    private val settingsRepo: SettingsDoa
+    private val settingsRepo: SettingsDao
 ) : VpnService {
     private val _tunnelName = MutableStateFlow("")
     override val tunnelName get() = _tunnelName.asStateFlow()

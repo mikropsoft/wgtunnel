@@ -3,7 +3,7 @@ package com.zaneschepke.wireguardautotunnel
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.zaneschepke.wireguardautotunnel.repository.AppDatabase
+import com.zaneschepke.wireguardautotunnel.data.AppDatabase
 import java.io.IOException
 import org.junit.Rule
 import org.junit.Test
