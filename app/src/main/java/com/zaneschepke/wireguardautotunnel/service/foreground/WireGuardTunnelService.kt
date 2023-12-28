@@ -75,42 +75,43 @@ class WireGuardTunnelService : ForegroundService() {
                         }
                     }
                 }
-                launch {
-                    var didShowConnected = false
-                    var didShowFailedHandshakeNotification = false
-                    vpnService.handshakeStatus.collect {
-                        when (it) {
-                            HandshakeStatus.NOT_STARTED -> {
-                            }
-                            HandshakeStatus.NEVER_CONNECTED -> {
-                                if (!didShowFailedHandshakeNotification) {
-                                    launchVpnConnectionFailedNotification(
-                                        getString(R.string.initial_connection_failure_message)
-                                    )
-                                    didShowFailedHandshakeNotification = true
-                                    didShowConnected = false
-                                }
-                            }
-
-                            HandshakeStatus.HEALTHY -> {
-                                if (!didShowConnected) {
-                                    launchVpnConnectedNotification()
-                                    didShowConnected = true
-                                }
-                            }
-                            HandshakeStatus.STALE -> {}
-                            HandshakeStatus.UNHEALTHY -> {
-                                if (!didShowFailedHandshakeNotification) {
-                                    launchVpnConnectionFailedNotification(
-                                        getString(R.string.lost_connection_failure_message)
-                                    )
-                                    didShowFailedHandshakeNotification = true
-                                    didShowConnected = false
-                                }
-                            }
-                        }
-                    }
-                }
+                //TODO fix connected notification
+//                launch {
+//                    var didShowConnected = false
+//                    var didShowFailedHandshakeNotification = false
+//                    vpnService.handshakeStatus.collect {
+//                        when (it) {
+//                            HandshakeStatus.NOT_STARTED -> {
+//                            }
+//                            HandshakeStatus.NEVER_CONNECTED -> {
+//                                if (!didShowFailedHandshakeNotification) {
+//                                    launchVpnConnectionFailedNotification(
+//                                        getString(R.string.initial_connection_failure_message)
+//                                    )
+//                                    didShowFailedHandshakeNotification = true
+//                                    didShowConnected = false
+//                                }
+//                            }
+//
+//                            HandshakeStatus.HEALTHY -> {
+//                                if (!didShowConnected) {
+//                                    launchVpnConnectedNotification()
+//                                    didShowConnected = true
+//                                }
+//                            }
+//                            HandshakeStatus.STALE -> {}
+//                            HandshakeStatus.UNHEALTHY -> {
+//                                if (!didShowFailedHandshakeNotification) {
+//                                    launchVpnConnectionFailedNotification(
+//                                        getString(R.string.lost_connection_failure_message)
+//                                    )
+//                                    didShowFailedHandshakeNotification = true
+//                                    didShowConnected = false
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
             }
     }
 

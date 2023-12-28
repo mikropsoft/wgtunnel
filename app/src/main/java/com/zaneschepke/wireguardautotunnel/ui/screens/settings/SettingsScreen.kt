@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -74,6 +76,7 @@ import com.zaneschepke.wireguardautotunnel.ui.common.ClickableIconButton
 import com.zaneschepke.wireguardautotunnel.ui.common.config.ConfigurationToggle
 import com.zaneschepke.wireguardautotunnel.ui.common.prompt.AuthorizationPrompt
 import com.zaneschepke.wireguardautotunnel.ui.common.text.SectionTitle
+import com.zaneschepke.wireguardautotunnel.util.Error
 import com.zaneschepke.wireguardautotunnel.util.FileUtils
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -88,7 +91,7 @@ import kotlinx.coroutines.launch
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
     padding: PaddingValues,
-    showSnackbarMessage: (String) -> Unit,
+    showSnackbarMessage: (Int) -> Unit,
     focusRequester: FocusRequester
 ) {
     val scope = rememberCoroutineScope { Dispatchers.IO }
@@ -109,8 +112,49 @@ fun SettingsScreen(
     val screenPadding = 5.dp
     val fillMaxWidth = .85f
 
+    LaunchedEffect(uiState.errorEvent) {
+        if (uiState.errorEvent != Error.NONE) {
+            showSnackbarMessage(uiState.errorEvent.getMessage())
+            viewModel.emitErrorEventConsumed()
+        }
+    }
 
-    //TODO add error collecting and displaying for WGTunnelErrors
+    if(uiState.loading) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Top,
+            modifier =
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .focusable()
+                .padding(padding)) {
+            Surface(
+                tonalElevation = 2.dp,
+                shadowElevation = 2.dp,
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier =
+                (if (WireGuardAutoTunnel.isRunningOnAndroidTv(context)) {
+                    Modifier.height(IntrinsicSize.Min)
+                        .fillMaxWidth(fillMaxWidth)
+                        .padding(top = 10.dp)
+                } else {
+                    Modifier.fillMaxWidth(fillMaxWidth).padding(top = 20.dp)
+                })
+                    .padding(bottom = 25.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        stringResource(R.string.thank_you),
+                        textAlign = TextAlign.Start,
+                        modifier = Modifier.padding(bottom = 20.dp),
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
+    }
+
 
     fun exportAllConfigs() {
         try {
@@ -122,22 +166,16 @@ fun SettingsScreen(
             }
             FileUtils.saveFilesToZip(context, files)
             didExportFiles = true
-            showSnackbarMessage(context.getString(R.string.exported_configs_message))
+            showSnackbarMessage(R.string.exported_configs_message)
         } catch (e: Exception) {
-            showSnackbarMessage(e.message!!)
+            showSnackbarMessage(Error.GENERAL.getMessage())
         }
     }
 
     fun saveTrustedSSID() {
         if (currentText.isNotEmpty()) {
-            scope.launch {
-                try {
-                    viewModel.onSaveTrustedSSID(currentText)
-                    currentText = ""
-                } catch (e: Exception) {
-                    showSnackbarMessage(e.message ?: context.getString(R.string.unknown_error))
-                }
-            }
+            viewModel.onSaveTrustedSSID(currentText)
+            currentText = ""
         }
     }
 
@@ -163,9 +201,7 @@ fun SettingsScreen(
         isBackgroundLocationGranted = if (!fineLocationState.status.isGranted) {
             false
         } else {
-            scope.launch {
-                viewModel.setLocationDisclosureShown()
-            }
+            viewModel.setLocationDisclosureShown()
             true
         }
     }
@@ -194,101 +230,101 @@ fun SettingsScreen(
         }
     }
 
-        AnimatedVisibility(!uiState.isLocationDisclosureShown) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Top,
+    AnimatedVisibility(!uiState.isLocationDisclosureShown && !uiState.loading) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Top,
+            modifier =
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(padding)
+        ) {
+            Icon(
+                Icons.Rounded.LocationOff,
+                contentDescription = stringResource(id = R.string.map),
                 modifier =
                 Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .padding(padding)
-            ) {
-                Icon(
-                    Icons.Rounded.LocationOff,
-                    contentDescription = stringResource(id = R.string.map),
-                    modifier =
+                    .padding(30.dp)
+                    .size(128.dp)
+            )
+            Text(
+                stringResource(R.string.prominent_background_location_title),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(30.dp),
+                fontSize = 20.sp
+            )
+            Text(
+                stringResource(R.string.prominent_background_location_message),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(30.dp),
+                fontSize = 15.sp
+            )
+            Row(
+                modifier =
+                if (WireGuardAutoTunnel.isRunningOnAndroidTv(context)) {
                     Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
                         .padding(30.dp)
-                        .size(128.dp)
-                )
-                Text(
-                    stringResource(R.string.prominent_background_location_title),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(30.dp),
-                    fontSize = 20.sp
-                )
-                Text(
-                    stringResource(R.string.prominent_background_location_message),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(30.dp),
-                    fontSize = 15.sp
-                )
-                Row(
-                    modifier =
-                    if (WireGuardAutoTunnel.isRunningOnAndroidTv(context)) {
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(10.dp)
-                    } else {
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(30.dp)
-                    },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    TextButton(onClick = {
-                        viewModel.setLocationDisclosureShown()
-                    }) {
-                        Text(stringResource(id = R.string.no_thanks))
-                    }
-                    TextButton(modifier = Modifier.focusRequester(focusRequester), onClick = {
-                        openSettings()
-                        viewModel.setLocationDisclosureShown()
-                    }) {
-                        Text(stringResource(id = R.string.turn_on))
-                    }
+                },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                TextButton(onClick = {
+                    viewModel.setLocationDisclosureShown()
+                }) {
+                    Text(stringResource(id = R.string.no_thanks))
+                }
+                TextButton(modifier = Modifier.focusRequester(focusRequester), onClick = {
+                    openSettings()
+                    viewModel.setLocationDisclosureShown()
+                }) {
+                    Text(stringResource(id = R.string.turn_on))
                 }
             }
         }
+    }
 
-        AnimatedVisibility(showAuthPrompt) {
-            AuthorizationPrompt(
-                onSuccess = {
-                    showAuthPrompt = false
-                    exportAllConfigs()
-                },
-                onError = { error ->
-                    showSnackbarMessage(error)
-                    showAuthPrompt = false
-                },
-                onFailure = {
-                    showAuthPrompt = false
-                    showSnackbarMessage(context.getString(R.string.authentication_failed))
-                }
+    AnimatedVisibility(showAuthPrompt) {
+        AuthorizationPrompt(
+            onSuccess = {
+                showAuthPrompt = false
+                exportAllConfigs()
+            },
+            onError = { error ->
+                showAuthPrompt = false
+                showSnackbarMessage(R.string.error_authentication_failed)
+                showAuthPrompt = false
+            },
+            onFailure = {
+                showAuthPrompt = false
+                showSnackbarMessage(R.string.error_authentication_failed)
+            }
+        )
+    }
+
+    if (uiState.tunnels.isEmpty() && !uiState.loading && uiState.isLocationDisclosureShown) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            Text(
+                stringResource(R.string.one_tunnel_required),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(15.dp),
+                fontStyle = FontStyle.Italic
             )
         }
-
-        if (uiState.tunnels.isEmpty()) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-            ) {
-                Text(
-                    stringResource(R.string.one_tunnel_required),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(15.dp),
-                    fontStyle = FontStyle.Italic
-                )
-            }
-            return
-        }
-
+    }
+    if (!uiState.loading && uiState.isLocationDisclosureShown && uiState.tunnels.isNotEmpty()) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top,
@@ -453,11 +489,11 @@ fun SettingsScreen(
                                 if (!isAllAutoTunnelPermissionsEnabled() && uiState.settings.isTunnelOnWifiEnabled) {
                                     val message =
                                         if (!isBackgroundLocationGranted) {
-                                            context.getString(R.string.background_location_required)
+                                            R.string.background_location_required
                                         } else if (viewModel.isLocationServicesNeeded()) {
-                                            context.getString(R.string.location_services_required)
+                                            R.string.location_services_required
                                         } else {
-                                            context.getString(R.string.precise_location_required)
+                                            R.string.precise_location_required
                                         }
                                     showSnackbarMessage(message)
                                 } else {
@@ -499,7 +535,7 @@ fun SettingsScreen(
                             stringResource(R.string.use_kernel),
                             enabled = !(
                                     uiState.settings.isAutoTunnelEnabled || uiState.settings.isAlwaysOnVpnEnabled ||
-                                            (uiState.tunnelState == Tunnel.State.UP)
+                                            (uiState.vpnState.status == Tunnel.State.UP)
                                     ),
                             checked = uiState.settings.isKernelEnabled,
                             padding = screenPadding,
@@ -536,9 +572,7 @@ fun SettingsScreen(
                             checked = uiState.settings.isAlwaysOnVpnEnabled,
                             padding = screenPadding,
                             onCheckChanged = {
-                                scope.launch {
-                                    viewModel.onToggleAlwaysOnVPN()
-                                }
+                                viewModel.onToggleAlwaysOnVPN()
                             }
                         )
                         ConfigurationToggle(
@@ -547,9 +581,7 @@ fun SettingsScreen(
                             checked = uiState.settings.isShortcutsEnabled,
                             padding = screenPadding,
                             onCheckChanged = {
-                                scope.launch {
-                                    viewModel.onToggleShortcutsEnabled()
-                                }
+                                viewModel.onToggleShortcutsEnabled()
                             }
                         )
                         Row(
@@ -577,3 +609,4 @@ fun SettingsScreen(
             }
         }
     }
+}

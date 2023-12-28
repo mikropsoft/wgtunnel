@@ -7,14 +7,16 @@ import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wireguard.android.util.RootShell
-import com.zaneschepke.wireguardautotunnel.data.TunnelConfigDao
+import com.zaneschepke.wireguardautotunnel.Constants
 import com.zaneschepke.wireguardautotunnel.data.datastore.DataStoreManager
 import com.zaneschepke.wireguardautotunnel.data.model.Settings
 import com.zaneschepke.wireguardautotunnel.data.repository.SettingsRepository
+import com.zaneschepke.wireguardautotunnel.data.repository.TunnelConfigRepository
 import com.zaneschepke.wireguardautotunnel.service.foreground.ServiceManager
 import com.zaneschepke.wireguardautotunnel.service.tunnel.VpnService
-import com.zaneschepke.wireguardautotunnel.util.WgTunnelException
+import com.zaneschepke.wireguardautotunnel.util.Error
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -27,22 +29,25 @@ class SettingsViewModel
 @Inject
 constructor(
     private val application: Application,
-    private val tunnelRepo: TunnelConfigDao,
+    private val tunnelConfigRepository: TunnelConfigRepository,
     private val settingsRepository: SettingsRepository,
     private val dataStoreManager: DataStoreManager,
     private val rootShell: RootShell,
     private val vpnService: VpnService
 ) : ViewModel() {
 
+    private val _errorState = MutableStateFlow(Error.NONE)
+
     val uiState = combine(
-        settingsRepository.getSettings(),
-        tunnelRepo.getAllFlow(),
-        vpnService.state,
+        settingsRepository.getSettingsFlow(),
+        tunnelConfigRepository.getTunnelConfigsFlow(),
+        vpnService.vpnState,
         dataStoreManager.locationDisclosureFlow,
-    ){ settings, tunnels, tunnelState, locationDisclosure ->
-        SettingsUiState(settings, tunnels, tunnelState, locationDisclosure ?: false, false)
+        _errorState
+    ){ settings, tunnels, tunnelState, locationDisclosure, errorState ->
+        SettingsUiState(settings, tunnels, tunnelState, locationDisclosure ?: false, false, errorState)
     }.stateIn(viewModelScope,
-        SharingStarted.WhileSubscribed(5_000L), SettingsUiState())
+        SharingStarted.WhileSubscribed(Constants.SUBSCRIPTION_TIMEOUT), SettingsUiState())
 
     fun onSaveTrustedSSID(ssid: String) {
         val trimmed = ssid.trim()
@@ -50,10 +55,17 @@ constructor(
             uiState.value.settings.trustedNetworkSSIDs.add(trimmed)
             saveSettings(uiState.value.settings)
         } else {
-            throw WgTunnelException("SSID already exists.")
+            emitErrorEvent(Error.SSID_EXISTS)
         }
     }
 
+    fun emitErrorEventConsumed() {
+        _errorState.tryEmit(Error.NONE)
+    }
+
+    private fun emitErrorEvent(error : Error) {
+        _errorState.tryEmit(error)
+    }
     suspend fun isLocationDisclosureShown() : Boolean {
         return dataStoreManager.getFromStore(DataStoreManager.LOCATION_DISCLOSURE_SHOWN) ?: false
     }
@@ -76,7 +88,7 @@ constructor(
     }
 
     private suspend fun getDefaultTunnelOrFirst() : String {
-        return uiState.value.settings.defaultTunnel ?: tunnelRepo.getAll().first().wgQuick
+        return uiState.value.settings.defaultTunnel ?: tunnelConfigRepository.getAll().first().wgQuick
     }
 
     fun toggleAutoTunnel() = viewModelScope.launch {
@@ -94,9 +106,8 @@ constructor(
         )
     }
 
-    suspend fun onToggleAlwaysOnVPN() {
-        val updatedSettings =
-            uiState.value.settings.copy(
+    fun onToggleAlwaysOnVPN() = viewModelScope.launch {
+        val updatedSettings = uiState.value.settings.copy(
                 isAlwaysOnVpnEnabled = !uiState.value.settings.isAlwaysOnVpnEnabled,
                 defaultTunnel = getDefaultTunnelOrFirst()
             )
@@ -163,7 +174,7 @@ constructor(
                 saveKernelMode(on = true)
             } catch (e: RootShell.RootShellException) {
                 saveKernelMode(on = false)
-                throw WgTunnelException("Root shell denied!")
+                emitErrorEvent(Error.ROOT_DENIED)
             }
         } else {
             saveKernelMode(on = false)

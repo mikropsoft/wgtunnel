@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
     suspend fun save(settings : Settings)
-    fun getSettings() : Flow<Settings>
+    fun getSettingsFlow() : Flow<Settings>
 
     suspend fun getAll() : List<Settings>
 }

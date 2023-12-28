@@ -6,9 +6,6 @@ object Constants {
     const val VPN_CONNECTIVITY_CHECK_INTERVAL = 3000L
     const val VPN_STATISTIC_CHECK_INTERVAL = 1000L
     const val TOGGLE_TUNNEL_DELAY = 500L
-    const val FADE_IN_ANIMATION_DURATION = 1000
-    const val SLIDE_IN_ANIMATION_DURATION = 500
-    const val SLIDE_IN_TRANSITION_OFFSET = 1000
     const val CONF_FILE_EXTENSION = ".conf"
     const val ZIP_FILE_EXTENSION = ".zip"
     const val URI_CONTENT_SCHEME = "content"
@@ -18,4 +15,6 @@ object Constants {
     const val ANDROID_TV_EXPLORER_STUB = "com.android.tv.frameworkpackagestubs"
     const val EMAIL_MIME_TYPE = "message/rfc822"
     const val SYSTEM_EXEMPT_SERVICE_TYPE_ID = 1024
+
+    const val SUBSCRIPTION_TIMEOUT = 5_000L
 }

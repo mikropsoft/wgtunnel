@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,14 +86,15 @@ import com.zaneschepke.wireguardautotunnel.Constants
 import com.zaneschepke.wireguardautotunnel.R
 import com.zaneschepke.wireguardautotunnel.WireGuardAutoTunnel
 import com.zaneschepke.wireguardautotunnel.data.model.TunnelConfig
+import com.zaneschepke.wireguardautotunnel.handshakeStatus
+import com.zaneschepke.wireguardautotunnel.mapPeerStats
 import com.zaneschepke.wireguardautotunnel.service.tunnel.HandshakeStatus
 import com.zaneschepke.wireguardautotunnel.ui.CaptureActivityPortrait
 import com.zaneschepke.wireguardautotunnel.ui.Routes
 import com.zaneschepke.wireguardautotunnel.ui.common.RowListItem
-import com.zaneschepke.wireguardautotunnel.ui.theme.brickRed
 import com.zaneschepke.wireguardautotunnel.ui.theme.corn
 import com.zaneschepke.wireguardautotunnel.ui.theme.mint
-import com.zaneschepke.wireguardautotunnel.util.WgTunnelException
+import com.zaneschepke.wireguardautotunnel.util.Error
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -102,7 +104,7 @@ import kotlinx.coroutines.launch
 fun MainScreen(
     viewModel: MainViewModel = hiltViewModel(),
     padding: PaddingValues,
-    showSnackbarMessage: (String) -> Unit,
+    showSnackbarMessage: (Int) -> Unit,
     navController: NavController
 ) {
     val haptic = LocalHapticFeedback.current
@@ -113,15 +115,16 @@ fun MainScreen(
     val sheetState = rememberModalBottomSheetState()
     var showBottomSheet by remember { mutableStateOf(false) }
     var showPrimaryChangeAlertDialog by remember { mutableStateOf(false) }
-    val tunnels by viewModel.tunnels.collectAsStateWithLifecycle(mutableListOf())
-    val handshakeStatus by viewModel.handshakeStatus.collectAsStateWithLifecycle(
-        HandshakeStatus.NOT_STARTED
-    )
     var selectedTunnel by remember { mutableStateOf<TunnelConfig?>(null) }
-    val state by viewModel.state.collectAsStateWithLifecycle(Tunnel.State.DOWN)
-    val tunnelName by viewModel.tunnelName.collectAsStateWithLifecycle("")
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val statistics by viewModel.statistics.collectAsStateWithLifecycle(null)
+
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(uiState.errorEvent){
+        if(uiState.errorEvent != Error.NONE) {
+            showSnackbarMessage(uiState.errorEvent.getMessage())
+            viewModel.emitErrorEventConsumed()
+        }
+    }
 
     // Nested scroll for control FAB
     val nestedScrollConnection =
@@ -176,41 +179,21 @@ fun MainScreen(
                             )
                         }
                     ) {
-                        throw WgTunnelException(context.getString(R.string.no_file_explorer))
+                        showSnackbarMessage(R.string.error_no_file_explorer)
                     }
                     return intent
                 }
             }
         ) { data ->
             if (data == null) return@rememberLauncherForActivityResult
-            scope.launch(Dispatchers.IO) {
-                try {
-                    viewModel.onTunnelFileSelected(data)
-                } catch (e: WgTunnelException) {
-                    showSnackbarMessage(e.message)
-                }
-            }
+                viewModel.onTunnelFileSelected(data)
         }
 
     val scanLauncher =
         rememberLauncherForActivityResult(
             contract = ScanContract(),
             onResult = {
-                scope.launch {
-                    try {
-                        viewModel.onTunnelQrResult(it.contents)
-                    } catch (e: Exception) {
-                        when (e) {
-                            is WgTunnelException -> {
-                                showSnackbarMessage(e.message)
-                            }
-
-                            else -> {
-                                showSnackbarMessage("No QR code scanned")
-                            }
-                        }
-                    }
-                }
+                viewModel.onTunnelQrResult(it.contents)
             }
         )
 
@@ -242,11 +225,7 @@ fun MainScreen(
         checked: Boolean,
         tunnel: TunnelConfig
     ) {
-        try {
-            if (checked) viewModel.onTunnelStart(tunnel) else viewModel.onTunnelStop()
-        } catch (e: Exception) {
-            showSnackbarMessage(e.message!!)
-        }
+        if (checked) viewModel.onTunnelStart(tunnel) else viewModel.onTunnelStop()
     }
 
     Scaffold(
@@ -290,7 +269,7 @@ fun MainScreen(
             }
         }
     ) {
-        AnimatedVisibility(tunnels.isEmpty(), exit = fadeOut(), enter = fadeIn()) {
+        AnimatedVisibility(uiState.tunnels.isEmpty() && !uiState.loading, exit = fadeOut(), enter = fadeIn()) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -316,11 +295,7 @@ fun MainScreen(
                         .fillMaxWidth()
                         .clickable {
                             showBottomSheet = false
-                            try {
-                                tunnelFileImportResultLauncher.launch(Constants.ALLOWED_FILE_TYPES)
-                            } catch (e: Exception) {
-                                showSnackbarMessage(e.message!!)
-                            }
+                            tunnelFileImportResultLauncher.launch(Constants.ALLOWED_FILE_TYPES)
                         }
                         .padding(10.dp)
                 ) {
@@ -406,20 +381,24 @@ fun MainScreen(
                     .padding(top = 10.dp)
                     .nestedScroll(nestedScrollConnection)
             ) {
-                items(tunnels, key = { tunnel -> tunnel.id }) { tunnel ->
+                items(uiState.tunnels, key = { tunnel -> tunnel.id }) { tunnel ->
                     val leadingIconColor = (
-                            if (tunnelName == tunnel.name) {
-                                when (handshakeStatus) {
-                                    HandshakeStatus.HEALTHY -> mint
-                                    HandshakeStatus.UNHEALTHY -> brickRed
-                                    HandshakeStatus.STALE -> corn
-                                    HandshakeStatus.NOT_STARTED -> Color.Gray
-                                    HandshakeStatus.NEVER_CONNECTED -> brickRed
+                            if (uiState.vpnState.name == tunnel.name && uiState.vpnState.status == Tunnel.State.UP) {
+                                uiState.vpnState.statistics?.mapPeerStats()?.map {
+                                    it.value?.handshakeStatus()
+                                }.let {
+                                    when {
+                                        it?.all { it == HandshakeStatus.HEALTHY } == true -> mint
+                                        it?.any { it == HandshakeStatus.STALE } == true -> corn
+                                        it?.all { it == HandshakeStatus.NOT_STARTED } == true -> Color.Gray
+                                        else -> {
+                                            Color.Gray
+                                        }
+                                    }
                                 }
                             } else {
                                 Color.Gray
-                            }
-                            )
+                            })
                     val focusRequester = remember { FocusRequester() }
                     val expanded =
                         remember {
@@ -427,7 +406,7 @@ fun MainScreen(
                         }
                     RowListItem(
                         icon = {
-                            if (settings.isTunnelConfigDefault(tunnel)) {
+                            if (uiState.settings.isTunnelConfigDefault(tunnel)) {
                                 Icon(
                                     Icons.Rounded.Star,
                                     stringResource(R.string.status),
@@ -451,10 +430,9 @@ fun MainScreen(
                         },
                         text = tunnel.name,
                         onHold = {
-                            if ((state == Tunnel.State.UP) && (tunnel.name == tunnelName)) {
+                            if ((uiState.vpnState.status == Tunnel.State.UP) && (tunnel.name == uiState.vpnState.name)) {
                                 showSnackbarMessage(
-                                    context.resources.getString(R.string.turn_off_tunnel)
-                                )
+                                    R.string.turn_off_tunnel)
                                 return@RowListItem
                             }
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -462,7 +440,7 @@ fun MainScreen(
                         },
                         onClick = {
                             if (!WireGuardAutoTunnel.isRunningOnAndroidTv(context)) {
-                                if (state == Tunnel.State.UP && (tunnelName == tunnel.name)) {
+                                if (uiState.vpnState.status == Tunnel.State.UP && (uiState.vpnState.name == tunnel.name)) {
                                     expanded.value = !expanded.value
                                 }
                             } else {
@@ -470,7 +448,7 @@ fun MainScreen(
                                 focusRequester.requestFocus()
                             }
                         },
-                        statistics = statistics,
+                        statistics = uiState.vpnState.statistics,
                         expanded = expanded.value,
                         rowButton = {
                             if (tunnel.id == selectedTunnel?.id && !WireGuardAutoTunnel.isRunningOnAndroidTv(
@@ -478,14 +456,11 @@ fun MainScreen(
                                 )
                             ) {
                                 Row {
-                                    if (!settings.isTunnelConfigDefault(tunnel)) {
+                                    if (!uiState.settings.isTunnelConfigDefault(tunnel)) {
                                         IconButton(onClick = {
-                                            if (settings.isAutoTunnelEnabled) {
+                                            if (uiState.settings.isAutoTunnelEnabled) {
                                                 showSnackbarMessage(
-                                                    context.resources.getString(
-                                                        R.string.turn_off_auto
-                                                    )
-                                                )
+                                                        R.string.turn_off_auto)
                                             } else {
                                                 showPrimaryChangeAlertDialog = true
                                             }
@@ -514,7 +489,7 @@ fun MainScreen(
                                     }
                                 }
                             } else {
-                                val checked = state == Tunnel.State.UP && tunnel.name == tunnelName
+                                val checked = uiState.vpnState.status == Tunnel.State.UP && tunnel.name == uiState.vpnState.name
                                 if (!checked) expanded.value = false
 
                                 @Composable
@@ -529,14 +504,11 @@ fun MainScreen(
                                     )
                                 if (WireGuardAutoTunnel.isRunningOnAndroidTv(context)) {
                                     Row {
-                                        if (!settings.isTunnelConfigDefault(tunnel)) {
+                                        if (!uiState.settings.isTunnelConfigDefault(tunnel)) {
                                             IconButton(onClick = {
-                                                if (settings.isAutoTunnelEnabled) {
+                                                if (uiState.settings.isAutoTunnelEnabled) {
                                                     showSnackbarMessage(
-                                                        context.resources.getString(
-                                                            R.string.turn_off_auto
-                                                        )
-                                                    )
+                                                            R.string.turn_off_auto)
                                                 } else {
                                                     showPrimaryChangeAlertDialog = true
                                                 }
@@ -550,7 +522,7 @@ fun MainScreen(
                                         IconButton(
                                             modifier = Modifier.focusRequester(focusRequester),
                                             onClick = {
-                                                if (state == Tunnel.State.UP && (tunnelName == tunnel.name)) {
+                                                if (uiState.vpnState.status == Tunnel.State.UP && (uiState.vpnState.name == tunnel.name)) {
                                                     expanded.value = !expanded.value
                                                 }
                                             }
@@ -558,12 +530,9 @@ fun MainScreen(
                                             Icon(Icons.Rounded.Info, stringResource(R.string.info))
                                         }
                                         IconButton(onClick = {
-                                            if (state == Tunnel.State.UP && tunnel.name == tunnelName) {
+                                            if (uiState.vpnState.status == Tunnel.State.UP && tunnel.name == uiState.vpnState.name) {
                                                 showSnackbarMessage(
-                                                    context.resources.getString(
-                                                        R.string.turn_off_tunnel
-                                                    )
-                                                )
+                                                        R.string.turn_off_tunnel)
                                             } else {
                                                 navController.navigate(
                                                     "${Routes.Config.name}/${tunnel.id}"
@@ -576,12 +545,9 @@ fun MainScreen(
                                             )
                                         }
                                         IconButton(onClick = {
-                                            if (state == Tunnel.State.UP && tunnel.name == tunnelName) {
+                                            if (uiState.vpnState.status == Tunnel.State.UP && tunnel.name == uiState.vpnState.name) {
                                                 showSnackbarMessage(
-                                                    context.resources.getString(
-                                                        R.string.turn_off_tunnel
-                                                    )
-                                                )
+                                                        R.string.turn_off_tunnel)
                                             } else {
                                                 viewModel.onDelete(tunnel)
                                             }

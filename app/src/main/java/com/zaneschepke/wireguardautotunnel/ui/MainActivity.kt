@@ -10,11 +10,8 @@ import android.view.KeyEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarData
@@ -32,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -47,12 +43,15 @@ import com.zaneschepke.wireguardautotunnel.ui.common.PermissionRequestFailedScre
 import com.zaneschepke.wireguardautotunnel.ui.common.navigation.BottomNavBar
 import com.zaneschepke.wireguardautotunnel.ui.common.prompt.CustomSnackBar
 import com.zaneschepke.wireguardautotunnel.ui.screens.config.ConfigScreen
+import com.zaneschepke.wireguardautotunnel.ui.screens.config.ConfigViewModel
+import com.zaneschepke.wireguardautotunnel.ui.screens.config.ConfigViewModelFactory
 import com.zaneschepke.wireguardautotunnel.ui.screens.main.MainScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.settings.SettingsScreen
 import com.zaneschepke.wireguardautotunnel.ui.screens.support.SupportScreen
 import com.zaneschepke.wireguardautotunnel.ui.theme.TransparentSystemBars
 import com.zaneschepke.wireguardautotunnel.ui.theme.WireguardAutoTunnelTheme
 import dagger.hilt.android.AndroidEntryPoint
+import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -66,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContent {
 //            val activityViewModel = hiltViewModel<ActivityViewModel>()
+
             val navController = rememberNavController()
             val focusRequester = remember { FocusRequester() }
 
@@ -102,20 +102,16 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
-                fun showSnackBarMessage(message: String) {
+                fun showSnackBarMessage(message: Int) {
                     lifecycleScope.launch(Dispatchers.Main) {
                         val result =
                             snackbarHostState.showSnackbar(
-                                message = message,
+                                message = getString(message),
                                 actionLabel = applicationContext.getString(R.string.okay),
                                 duration = SnackbarDuration.Short
                             )
                         when (result) {
-                            SnackbarResult.ActionPerformed -> {
-                                snackbarHostState.currentSnackbarData?.dismiss()
-                            }
-
-                            SnackbarResult.Dismissed -> {
+                            SnackbarResult.ActionPerformed, SnackbarResult.Dismissed -> {
                                 snackbarHostState.currentSnackbarData?.dismiss()
                             }
                         }
@@ -192,86 +188,38 @@ class MainActivity : AppCompatActivity() {
                         )
                         return@Scaffold
                     }
-
                     NavHost(navController, startDestination = Routes.Main.name) {
                         composable(
                             Routes.Main.name,
-                            enterTransition = {
-                                when (initialState.destination.route) {
-                                    Routes.Settings.name, Routes.Support.name ->
-                                        slideInHorizontally(
-                                            initialOffsetX = {
-                                                -Constants.SLIDE_IN_TRANSITION_OFFSET
-                                            },
-                                            animationSpec = tween(
-                                                Constants.SLIDE_IN_ANIMATION_DURATION
-                                            )
-                                        )
-
-                                    else -> {
-                                        fadeIn(
-                                            animationSpec = tween(
-                                                Constants.FADE_IN_ANIMATION_DURATION
-                                            )
-                                        )
-                                    }
-                                }
-                            },
-                            exitTransition = {
-                                ExitTransition.None
-                            }
                         ) {
                             MainScreen(padding = padding, showSnackbarMessage = { message ->
                                 showSnackBarMessage(message)
                             }, navController = navController)
                         }
-                        composable(Routes.Settings.name, enterTransition = {
-                            when (initialState.destination.route) {
-                                Routes.Main.name ->
-                                    slideInHorizontally(
-                                        initialOffsetX = { Constants.SLIDE_IN_TRANSITION_OFFSET },
-                                        animationSpec = tween(Constants.SLIDE_IN_ANIMATION_DURATION)
-                                    )
-
-                                Routes.Support.name -> {
-                                    slideInHorizontally(
-                                        initialOffsetX = { -Constants.SLIDE_IN_TRANSITION_OFFSET },
-                                        animationSpec = tween(Constants.SLIDE_IN_ANIMATION_DURATION)
-                                    )
-                                }
-
-                                else -> {
-                                    fadeIn(
-                                        animationSpec = tween(Constants.FADE_IN_ANIMATION_DURATION)
-                                    )
-                                }
-                            }
-                        }) {
+                        composable(Routes.Settings.name,
+                        ) {
                             SettingsScreen(padding = padding, showSnackbarMessage = { message ->
                                 showSnackBarMessage(message)
                             }, focusRequester = focusRequester)
                         }
-                        composable(Routes.Support.name, enterTransition = {
-                            when (initialState.destination.route) {
-                                Routes.Settings.name, Routes.Main.name ->
-                                    slideInHorizontally(
-                                        initialOffsetX = { Constants.SLIDE_IN_ANIMATION_DURATION },
-                                        animationSpec = tween(Constants.SLIDE_IN_ANIMATION_DURATION)
-                                    )
-
-                                else -> {
-                                    fadeIn(
-                                        animationSpec = tween(Constants.FADE_IN_ANIMATION_DURATION)
-                                    )
-                                }
-                            }
-                        }) { SupportScreen(padding = padding, focusRequester = focusRequester) }
-                        composable("${Routes.Config.name}/{id}", enterTransition = {
-                            fadeIn(animationSpec = tween(Constants.FADE_IN_ANIMATION_DURATION))
-                        }) {
+                        composable(Routes.Support.name,
+                        ) {
+                            SupportScreen(padding = padding, focusRequester = focusRequester)
+                        }
+                        composable("${Routes.Config.name}/{id}") {
                             val id = it.arguments?.getString("id")
                             if (!id.isNullOrBlank()) {
+                                //https://dagger.dev/hilt/view-model#assisted-injection
+                                val configViewModel by viewModels<ConfigViewModel>(
+                                    extrasProducer = {
+                                        defaultViewModelCreationExtras.withCreationCallback<
+                                                ConfigViewModelFactory> { factory ->
+                                            factory.create(id)
+                                        }
+                                    }
+                                )
                                 ConfigScreen(
+                                    viewModel = configViewModel,
                                     navController = navController,
                                     id = id,
                                     showSnackbarMessage = { message ->

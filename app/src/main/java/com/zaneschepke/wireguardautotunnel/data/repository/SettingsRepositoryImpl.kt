@@ -10,7 +10,7 @@ class SettingsRepositoryImpl(private val settingsDoa: SettingsDao) : SettingsRep
         settingsDoa.save(settings)
     }
 
-    override fun getSettings(): Flow<Settings> {
+    override fun getSettingsFlow(): Flow<Settings> {
         return settingsDoa.getSettingsFlow()
     }
 

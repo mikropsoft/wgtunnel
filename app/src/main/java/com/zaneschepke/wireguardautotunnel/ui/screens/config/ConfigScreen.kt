@@ -93,25 +93,16 @@ import timber.log.Timber
 )
 @Composable
 fun ConfigScreen(
-    viewModel: ConfigViewModel = hiltViewModel(),
+    viewModel: ConfigViewModel,
     focusRequester: FocusRequester,
     navController: NavController,
-    showSnackbarMessage: (String) -> Unit,
+    showSnackbarMessage: (Int) -> Unit,
     id: String
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val clipboardManager: ClipboardManager = LocalClipboardManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-
-    val tunnel by viewModel.tunnel.collectAsStateWithLifecycle(null)
-    val tunnelName = viewModel.tunnelName.collectAsStateWithLifecycle()
-    val packages by viewModel.packages.collectAsStateWithLifecycle()
-    val checkedPackages by viewModel.checkedPackages.collectAsStateWithLifecycle()
-    val include by viewModel.include.collectAsStateWithLifecycle()
-    val isAllApplicationsEnabled by viewModel.isAllApplicationsEnabled.collectAsStateWithLifecycle()
-    val proxyPeers by viewModel.proxyPeers.collectAsStateWithLifecycle()
-    val proxyInterface by viewModel.interfaceProxy.collectAsStateWithLifecycle()
     var showApplicationsDialog by remember { mutableStateOf(false) }
     var showAuthPrompt by remember { mutableStateOf(false) }
     var isAuthenticated by remember { mutableStateOf(false) }
@@ -121,6 +112,8 @@ fun ConfigScreen(
                 keyboardController?.hide()
             }
         }
+
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     val keyboardActions =
         KeyboardActions(
@@ -139,23 +132,12 @@ fun ConfigScreen(
     val fillMaxWidth = .85f
     val screenPadding = 5.dp
 
-    LaunchedEffect(Unit) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                viewModel.onScreenLoad(id)
-            } catch (e: Exception) {
-                showSnackbarMessage(e.message!!)
-                navController.navigate(Routes.Main.name)
-            }
-        }
-    }
-
     val applicationButtonText = {
         "Tunneling apps: " +
-                if (isAllApplicationsEnabled) {
+                if (uiState.isAllApplicationsEnabled) {
                     "all"
                 } else {
-                    "${checkedPackages.size} " + (if (include) "included" else "excluded")
+                    "${uiState.checkedPackageNames.size} " + (if (uiState.include) "included" else "excluded")
                 }
     }
 
@@ -166,20 +148,20 @@ fun ConfigScreen(
                 isAuthenticated = true
             },
             onError = { error ->
-                showSnackbarMessage(error)
                 showAuthPrompt = false
+                showSnackbarMessage(R.string.error_authentication_failed)
             },
             onFailure = {
                 showAuthPrompt = false
-                showSnackbarMessage(context.getString(R.string.authentication_failed))
+                showSnackbarMessage(R.string.error_authentication_failed)
             }
         )
     }
 
     if (showApplicationsDialog) {
         val sortedPackages =
-            remember(packages) {
-                packages.sortedBy { viewModel.getPackageLabel(it) }
+            remember(uiState.packages) {
+                uiState.packages.sortedBy { viewModel.getPackageLabel(it) }
             }
         AlertDialog(onDismissRequest = {
             showApplicationsDialog = false
@@ -192,7 +174,7 @@ fun ConfigScreen(
                 modifier =
                 Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight(if (isAllApplicationsEnabled) 1 / 5f else 4 / 5f)
+                    .fillMaxHeight(if (uiState.isAllApplicationsEnabled) 1 / 5f else 4 / 5f)
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth()
@@ -207,13 +189,13 @@ fun ConfigScreen(
                     ) {
                         Text(stringResource(id = R.string.tunnel_all))
                         Switch(
-                            checked = isAllApplicationsEnabled,
+                            checked = uiState.isAllApplicationsEnabled,
                             onCheckedChange = {
                                 viewModel.onAllApplicationsChange(it)
                             }
                         )
                     }
-                    if (!isAllApplicationsEnabled) {
+                    if (!uiState.isAllApplicationsEnabled) {
                         Row(
                             modifier =
                             Modifier
@@ -231,9 +213,9 @@ fun ConfigScreen(
                             ) {
                                 Text(stringResource(id = R.string.include))
                                 Checkbox(
-                                    checked = include,
+                                    checked = uiState.include,
                                     onCheckedChange = {
-                                        viewModel.onIncludeChange(!include)
+                                        viewModel.onIncludeChange(!uiState.include)
                                     }
                                 )
                             }
@@ -243,9 +225,9 @@ fun ConfigScreen(
                             ) {
                                 Text(stringResource(id = R.string.exclude))
                                 Checkbox(
-                                    checked = !include,
+                                    checked = !uiState.include,
                                     onCheckedChange = {
-                                        viewModel.onIncludeChange(!include)
+                                        viewModel.onIncludeChange(!uiState.include)
                                     }
                                 )
                             }
@@ -324,7 +306,7 @@ fun ConfigScreen(
                                     }
                                     Checkbox(
                                         modifier = Modifier.fillMaxSize(),
-                                        checked = (checkedPackages.contains(pack.packageName)),
+                                        checked = (uiState.checkedPackageNames.contains(pack.packageName)),
                                         onCheckedChange = {
                                             if (it) {
                                                 viewModel.onAddCheckedPackage(
@@ -362,7 +344,7 @@ fun ConfigScreen(
         }
     }
 
-    if (tunnel != null) {
+    if (uiState.tunnel != null) {
         Scaffold(
             floatingActionButtonPosition = FabPosition.End,
             floatingActionButton = {
@@ -371,22 +353,25 @@ fun ConfigScreen(
                 var fobColor by remember { mutableStateOf(secondaryColor) }
                 FloatingActionButton(
                     modifier =
-                    Modifier.padding(bottom = 90.dp).onFocusChanged {
-                        if (WireGuardAutoTunnel.isRunningOnAndroidTv(context)) {
-                            fobColor = if (it.isFocused) hoverColor else secondaryColor
-                        }
-                    },
+                    Modifier
+                        .padding(bottom = 90.dp)
+                        .onFocusChanged {
+                            if (WireGuardAutoTunnel.isRunningOnAndroidTv(context)) {
+                                fobColor = if (it.isFocused) hoverColor else secondaryColor
+                            }
+                        },
                     onClick = {
                         scope.launch {
                             try {
                                 viewModel.onSaveAllChanges()
                                 navController.navigate(Routes.Main.name)
                                 showSnackbarMessage(
-                                    context.resources.getString(R.string.config_changes_saved)
+                                    R.string.config_changes_saved
                                 )
                             } catch (e: Exception) {
                                 Timber.e(e.message)
-                                showSnackbarMessage(e.message!!)
+                                //TODO fix error handling
+                                //showSnackbarMessage(e.message!!)
                             }
                         }
                     },
@@ -433,30 +418,36 @@ fun ConfigScreen(
                         Column(
                             horizontalAlignment = Alignment.Start,
                             verticalArrangement = Arrangement.Top,
-                            modifier = Modifier.padding(15.dp).focusGroup()
+                            modifier = Modifier
+                                .padding(15.dp)
+                                .focusGroup()
                         ) {
                             SectionTitle(
                                 stringResource(R.string.interface_),
                                 padding = screenPadding
                             )
                             ConfigurationTextBox(
-                                value = tunnelName.value,
+                                value = uiState.tunnelName,
                                 onValueChange = { value ->
                                     viewModel.onTunnelNameChange(value)
                                 },
                                 keyboardActions = keyboardActions,
                                 label = stringResource(R.string.name),
                                 hint = stringResource(R.string.tunnel_name).lowercase(),
-                                modifier = baseTextBoxModifier.fillMaxWidth().focusRequester(
-                                    focusRequester
-                                )
+                                modifier = baseTextBoxModifier
+                                    .fillMaxWidth()
+                                    .focusRequester(
+                                        focusRequester
+                                    )
                             )
                             OutlinedTextField(
                                 modifier =
-                                baseTextBoxModifier.fillMaxWidth().clickable {
-                                    showAuthPrompt = true
-                                },
-                                value = proxyInterface.privateKey,
+                                baseTextBoxModifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showAuthPrompt = true
+                                    },
+                                value = uiState.interfaceProxy.privateKey,
                                 visualTransformation = if ((id == Constants.MANUAL_TUNNEL_CONFIG_ID) || isAuthenticated) VisualTransformation.None else PasswordVisualTransformation(),
                                 enabled = (id == Constants.MANUAL_TUNNEL_CONFIG_ID) || isAuthenticated,
                                 onValueChange = { value ->
@@ -483,10 +474,12 @@ fun ConfigScreen(
                                 keyboardActions = keyboardActions
                             )
                             OutlinedTextField(
-                                modifier = baseTextBoxModifier.fillMaxWidth().focusRequester(
-                                    FocusRequester.Default
-                                ),
-                                value = proxyInterface.publicKey,
+                                modifier = baseTextBoxModifier
+                                    .fillMaxWidth()
+                                    .focusRequester(
+                                        FocusRequester.Default
+                                    ),
+                                value = uiState.interfaceProxy.publicKey,
                                 enabled = false,
                                 onValueChange = {},
                                 trailingIcon = {
@@ -494,7 +487,7 @@ fun ConfigScreen(
                                         modifier = Modifier.focusRequester(FocusRequester.Default),
                                         onClick = {
                                             clipboardManager.setText(
-                                                AnnotatedString(proxyInterface.publicKey)
+                                                AnnotatedString(uiState.interfaceProxy.publicKey)
                                             )
                                         }
                                     ) {
@@ -513,7 +506,7 @@ fun ConfigScreen(
                             )
                             Row(modifier = Modifier.fillMaxWidth()) {
                                 ConfigurationTextBox(
-                                    value = proxyInterface.addresses,
+                                    value = uiState.interfaceProxy.addresses,
                                     onValueChange = { value ->
                                         viewModel.onAddressesChanged(value)
                                     },
@@ -526,7 +519,7 @@ fun ConfigScreen(
                                         .padding(end = 5.dp)
                                 )
                                 ConfigurationTextBox(
-                                    value = proxyInterface.listenPort,
+                                    value = uiState.interfaceProxy.listenPort,
                                     onValueChange = { value -> viewModel.onListenPortChanged(value) },
                                     keyboardActions = keyboardActions,
                                     label = stringResource(R.string.listen_port),
@@ -536,7 +529,7 @@ fun ConfigScreen(
                             }
                             Row(modifier = Modifier.fillMaxWidth()) {
                                 ConfigurationTextBox(
-                                    value = proxyInterface.dnsServers,
+                                    value = uiState.interfaceProxy.dnsServers,
                                     onValueChange = { value -> viewModel.onDnsServersChanged(value) },
                                     keyboardActions = keyboardActions,
                                     label = stringResource(R.string.dns_servers),
@@ -547,7 +540,7 @@ fun ConfigScreen(
                                         .padding(end = 5.dp)
                                 )
                                 ConfigurationTextBox(
-                                    value = proxyInterface.mtu,
+                                    value = uiState.interfaceProxy.mtu,
                                     onValueChange = { value -> viewModel.onMtuChanged(value) },
                                     keyboardActions = keyboardActions,
                                     label = stringResource(R.string.mtu),
@@ -573,7 +566,7 @@ fun ConfigScreen(
                             }
                         }
                     }
-                    proxyPeers.forEachIndexed { index, peer ->
+                    uiState.proxyPeers.forEachIndexed { index, peer ->
                         Surface(
                             tonalElevation = 2.dp,
                             shadowElevation = 2.dp,

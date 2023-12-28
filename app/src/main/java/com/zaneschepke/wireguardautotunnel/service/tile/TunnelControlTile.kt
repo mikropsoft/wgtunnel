@@ -116,27 +116,19 @@ class TunnelControlTile : TileService() {
     }
 
     private suspend fun updateTileState() {
-        vpnService.state.collect {
+        vpnService.vpnState.collect {
+            when(it.status) {
+                Tunnel.State.UP -> qsTile.state = Tile.STATE_ACTIVE
+                Tunnel.State.DOWN -> qsTile.state = Tile.STATE_INACTIVE
+                else -> qsTile.state = Tile.STATE_UNAVAILABLE
+            }
             try {
-                when (it) {
-                    Tunnel.State.UP -> {
-                        qsTile.state = Tile.STATE_ACTIVE
-                    }
-
-                    Tunnel.State.DOWN -> {
-                        qsTile.state = Tile.STATE_INACTIVE
-                    }
-
-                    else -> {
-                        qsTile.state = Tile.STATE_UNAVAILABLE
-                    }
-                }
                 val config = determineTileTunnel()
                 setTileDescription(
                     config?.name ?: this.resources.getString(R.string.no_tunnel_available)
                 )
                 qsTile.updateTile()
-            } catch (e: Exception) {
+            } catch (e : Exception) {
                 Timber.e("Unable to update tile state")
             }
         }
